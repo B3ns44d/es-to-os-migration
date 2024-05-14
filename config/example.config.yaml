@@ -1,0 +1,15 @@
+source_indices:
+  - jaeger-span-2024-01-10
+  - jaeger-span-2024-01-11
+target_index: jaeger-span-000001
+es_target_config:
+  hosts: [ 'http://target_opensearch:9200' ]
+  http_auth: [ 'user', 'password' ]
+  use_ssl: True
+  verify_certs: False
+  ssl_assert_hostname: False
+  ssl_show_warn: False
+es_source_remote:
+  host: 'http://source_elasticsearch:9200'
+  username: 'source_user'
+  password: 'source_password'
