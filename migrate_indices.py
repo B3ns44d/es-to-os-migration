@@ -11,16 +11,24 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 def load_config(file_path: str) -> Dict[str, any]:
     """Load configuration from a YAML file."""
-    with open(file_path, 'r') as file:
-        config = yaml.safe_load(file)
-    logging.info(f"Loaded configuration from {file_path}")
-    return config
+    try:
+        with open(file_path, 'r') as file:
+            config = yaml.safe_load(file)
+        logging.info(f"Loaded configuration from {file_path}")
+        return config
+    except Exception as e:
+        logging.error(f"Failed to load configuration from {file_path}. Error: {e}")
+        raise
 
 def initialize_opensearch_client(config: Dict[str, any]) -> OpenSearchTarget:
     """Initialize and return an OpenSearch client based on provided config."""
-    es_target = OpenSearchTarget(**config['es_target_config'])
-    logging.info(f"Initialized OpenSearch client for target cluster at {config['es_target_config']['hosts']}")
-    return es_target
+    try:
+        es_target = OpenSearchTarget(**config['es_target_config'])
+        logging.info(f"Initialized OpenSearch client for target cluster at {config['es_target_config']['hosts']}")
+        return es_target
+    except Exception as e:
+        logging.error(f"Failed to initialize OpenSearch client. Error: {e}")
+        raise
 
 def start_reindex_task(es_target: OpenSearchTarget, source_index: str, target_index: str,
                        source_remote: Dict[str, str]) -> Optional[str]:
@@ -52,7 +60,7 @@ def check_task_status(es_target: OpenSearchTarget, task_id: str) -> Dict:
     """Check the status of a reindex task."""
     try:
         response = es_target.tasks.get(task_id=task_id)
-        logging.info(f"Checked status for task {task_id}: {response.get('completed', False)}")
+        logging.info(f"Checked status for task {task_id}: {'completed' if response.get('completed', False) else 'in progress'}")
         return response
     except Exception as e:
         logging.error(f"Failed to check status for task {task_id}. Error: {e}")
@@ -61,29 +69,32 @@ def check_task_status(es_target: OpenSearchTarget, task_id: str) -> Dict:
 def migrate_indices(config_path: str):
     """Main function to orchestrate the migration based on the provided YAML configuration."""
     start_time = datetime.now()
-    config = load_config(config_path)
-    es_target = initialize_opensearch_client(config)
-    task_ids = {}
+    try:
+        config = load_config(config_path)
+        es_target = initialize_opensearch_client(config)
+        task_ids = {}
 
-    for index in config['source_indices']:
-        task_id = start_reindex_task(es_target, index, config['target_index'], config['es_source_remote'])
-        if task_id:
-            task_ids[index] = task_id
+        for index in config['source_indices']:
+            task_id = start_reindex_task(es_target, index, config['target_index'], config['es_source_remote'])
+            if task_id:
+                task_ids[index] = task_id
 
-    while task_ids:
-        time.sleep(10)  # Check status every 10 seconds
-        for index, task_id in list(task_ids.items()):
-            status = check_task_status(es_target, task_id)
-            if status['completed']:
-                if 'error' in status:
-                    logging.error(f"Reindexing task for {index} failed. Error: {status['error']}")
+        while task_ids:
+            time.sleep(10)  # Check status every 10 seconds
+            for index, task_id in list(task_ids.items()):
+                status = check_task_status(es_target, task_id)
+                if status['completed']:
+                    if 'error' in status:
+                        logging.error(f"Reindexing task for {index} failed. Error: {status['error']}")
+                    else:
+                        logging.info(f"Reindexing task for {index} completed successfully.")
+                    task_ids.pop(index)
                 else:
-                    logging.info(f"Reindexing task for {index} completed successfully.")
-                task_ids.pop(index)
-            else:
-                logging.info(f"Reindexing task for {index} is still in progress...")
+                    logging.info(f"Reindexing task for {index} is still in progress...")
 
-    logging.info(f"Migration completed in {(datetime.now() - start_time).total_seconds()} seconds.")
+        logging.info(f"Migration completed in {(datetime.now() - start_time).total_seconds()} seconds.")
+    except Exception as e:
+        logging.error(f"Migration failed. Error: {e}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Migrate indices from Elasticsearch to OpenSearch.')
